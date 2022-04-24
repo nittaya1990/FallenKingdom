@@ -1,6 +1,7 @@
 package fr.devsylone.fkpi.lockedchests;
 
 import fr.devsylone.fallenkingdom.Fk;
+import fr.devsylone.fallenkingdom.display.progress.ProgressBar;
 import fr.devsylone.fallenkingdom.utils.Messages;
 import fr.devsylone.fallenkingdom.version.Version;
 import fr.devsylone.fallenkingdom.utils.XAdvancement;
@@ -9,7 +10,6 @@ import fr.devsylone.fkpi.api.event.PlayerLockedChestInteractEvent;
 import fr.devsylone.fkpi.teams.Team;
 import fr.devsylone.fkpi.util.Saveable;
 import net.md_5.bungee.api.ChatColor;
-import org.apache.commons.lang.NotImplementedException;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.advancement.Advancement;
@@ -34,9 +34,9 @@ public class LockedChest implements Saveable
 	private UUID unlocker;
 	private ChatColor chatColor = ChatColor.RESET;
 	private Location loc;
-	private int time;
 	private int day;
-	private ChestState state;
+	private ChestState state = ChestState.LOCKED;
+	private long time;
 	private long lastInteract;
 	private long startUnlocking;
 	private float yFix = -0.5F;
@@ -47,14 +47,12 @@ public class LockedChest implements Saveable
 
 	private String name;
 
-	public LockedChest(Location loc, int time, int day, String name)
+	public LockedChest(Location loc, int timeSecs, int day, String name)
 	{
 		this.loc = loc;
-		this.time = time;
-		unlocker = null;
+		this.time = timeSecs * 1000L;
 		this.day = day;
-		state = ChestState.LOCKED;
-		lastInteract = System.currentTimeMillis();
+		this.lastInteract = System.currentTimeMillis();
 		this.name = name;
 	}
 
@@ -73,7 +71,21 @@ public class LockedChest implements Saveable
 		return day;
 	}
 
+	/**
+	 * @deprecated {@link #getUnlockingTimeSecs()}
+	 */
+	@Deprecated
 	public int getUnlockingTime()
+	{
+		return getUnlockingTimeSecs();
+	}
+
+	public int getUnlockingTimeSecs()
+	{
+		return (int) (time / 1000);
+	}
+
+	public long getUnlockingTimeMillis()
 	{
 		return time;
 	}
@@ -145,11 +157,14 @@ public class LockedChest implements Saveable
 
 		lastInteract = System.currentTimeMillis();
 
-		final int armorstand = Fk.getInstance().getPacketManager().createFloatingText("§b0%", player, loc.clone().add(0.5, yFix, 0.5));
+		final Location loc = this.loc.clone().add(0.5, this.yFix, 0.5);
+		final ProgressBar bar = Fk.getInstance().getDisplayService().initProgressBar(player, loc);
 
 		task = Bukkit.getScheduler().runTaskTimer(Fk.getInstance(), () -> {
+			double progress = (double) (System.currentTimeMillis() - this.startUnlocking) / this.time;
+			loc.setY(this.loc.getY() + this.yFix);
 			if(player.isOnline())
-				Fk.getInstance().getPacketManager().updateFloatingText(armorstand, "§b" + (int) (((double) (System.currentTimeMillis() - startUnlocking) / 1000.0d / (double) time) * 100.0d) + "%");
+				bar.progress(player, loc, progress);
 
 			if(lastInteract + 1000 < System.currentTimeMillis())
 			{
@@ -158,10 +173,10 @@ public class LockedChest implements Saveable
 				Bukkit.getScheduler().cancelTask(task);
 				changeUnlocker(null);
 				if(player.isOnline())
-					Fk.getInstance().getPacketManager().remove(armorstand);
+					bar.remove(player);
 			}
 
-			if(startUnlocking + time * 1000 <= System.currentTimeMillis())
+			if(startUnlocking + time <= System.currentTimeMillis())
 			{
 				PlayerLockedChestInteractEvent endEvent = new PlayerLockedChestInteractEvent(player, this); // EVENT
 				Bukkit.getPluginManager().callEvent(endEvent); // EVENT
@@ -172,7 +187,7 @@ public class LockedChest implements Saveable
 				}
 				Bukkit.getScheduler().cancelTask(task);
 				if(player.isOnline())
-					Fk.getInstance().getPacketManager().remove(armorstand);
+					bar.remove(player);
 			}
 		}, 1L, 1L).getTaskId();
 	}
@@ -182,7 +197,7 @@ public class LockedChest implements Saveable
 	{
 		loc = new Location(Bukkit.getWorld(config.getString("Loc.World")), config.getInt("Loc.x"), config.getInt("Loc.y"), config.getInt("Loc.z"));
 		state = ChestState.valueOf(config.getString("State"));
-		time = config.getInt("Time");
+		time = config.getInt("Time") * 1000L;
 		day = config.getInt("Day");
 		name = config.getString("Name");
 		lootTable = config.getString("LootTable");
@@ -217,7 +232,7 @@ public class LockedChest implements Saveable
 		}
 		if (Version.VersionType.V1_13.isHigherOrEqual())
 			return Bukkit.getLootTable(parseKey(lootTable));
-		throw new NotImplementedException("Loot tables api don't exist in versions prior to 1.13.");
+		throw new UnsupportedOperationException("Loot tables api don't exist in versions prior to 1.13.");
 	}
 
 	@Override
@@ -229,7 +244,7 @@ public class LockedChest implements Saveable
 		config.set("Loc.z", loc.getBlockZ());
 
 		config.set("State", state.name());
-		config.set("Time", time);
+		config.set("Time", getUnlockingTimeSecs());
 		config.set("Day", day);
 		config.set("Name", name);
 		config.set("LootTable", lootTable);

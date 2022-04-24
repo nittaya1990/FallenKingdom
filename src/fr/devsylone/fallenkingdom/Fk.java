@@ -1,11 +1,19 @@
 package fr.devsylone.fallenkingdom;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Level;
 
+import fr.devsylone.fallenkingdom.display.GlobalDisplayService;
 import fr.devsylone.fallenkingdom.manager.packets.PacketManager1_17;
+import fr.devsylone.fallenkingdom.updater.GitHubAssetInfo;
+import fr.devsylone.fallenkingdom.updater.UpdateChecker;
 import fr.devsylone.fallenkingdom.utils.FkConfig;
 import fr.devsylone.fallenkingdom.version.LuckPermsContext;
 import org.bstats.bukkit.Metrics;
@@ -14,6 +22,7 @@ import org.bstats.charts.SingleLineChart;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.command.PluginCommand;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.java.JavaPluginLoader;
@@ -43,7 +52,6 @@ import fr.devsylone.fallenkingdom.manager.saveable.StarterInventoryManager;
 import fr.devsylone.fallenkingdom.pause.PauseRestorer;
 import fr.devsylone.fallenkingdom.players.FkPlayer;
 import fr.devsylone.fallenkingdom.scoreboard.PlaceHolderExpansion;
-import fr.devsylone.fallenkingdom.updater.PluginUpdater;
 import fr.devsylone.fallenkingdom.utils.ChatUtils;
 import fr.devsylone.fallenkingdom.utils.DebuggerUtils;
 import fr.devsylone.fallenkingdom.utils.FkSound;
@@ -53,6 +61,8 @@ import fr.devsylone.fkpi.FkPI;
 import fr.devsylone.fkpi.rules.Rule;
 import fr.devsylone.fkpi.teams.Team;
 import lombok.Getter;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.TestOnly;
 
 @Getter
 public class Fk extends JavaPlugin
@@ -67,6 +77,7 @@ public class Fk extends JavaPlugin
 	protected PauseRestorer pauseRestorer;
 	protected StarterInventoryManager starterInventoryManager;
 	protected ScoreboardManager scoreboardManager;
+	protected GlobalDisplayService displayService;
 	protected PacketManager packetManager;
 	protected DeepPauseManager deepPauseManager;
 	protected TipsManager tipsManager;
@@ -89,13 +100,22 @@ public class Fk extends JavaPlugin
 		instance = this;
 	}
 
-	// Test only
+	@TestOnly
 	public Fk(JavaPluginLoader loader, PluginDescriptionFile description, File dataFolder, File file) {
 		super(loader, description, dataFolder, file);
 	}
 
 	@Override
-	public void onEnable()
+	public void onEnable() {
+		try {
+			this.onEnable0();
+		} catch (Throwable throwable) {
+			this.pluginError = throwable.getMessage();
+			throw throwable;
+		}
+	}
+
+	public void onEnable0()
 	{
 		try
 		{
@@ -122,11 +142,12 @@ public class Fk extends JavaPlugin
 			getDataFolder().mkdir();
 
 		ListenersManager.registerListeners(this);
-		if (!check())
-			return;
 
 		languageManager = new LanguageManager();
 		languageManager.init(this);
+
+		if (!check())
+			return;
 
 		/*
 		 * FkPI
@@ -153,7 +174,8 @@ public class Fk extends JavaPlugin
 		/*
 		 * MANAGER
 		 */
-		playerManager = new PlayerManager();
+		displayService = new GlobalDisplayService();
+		playerManager = new PlayerManager(displayService);
 		pauseRestorer = new PauseRestorer();
 		starterInventoryManager = new StarterInventoryManager();
 		scoreboardManager = new ScoreboardManager();
@@ -167,6 +189,7 @@ public class Fk extends JavaPlugin
 		game = new Game();
 
 		saveableManager = new SaveablesManager(this);
+		saveableManager.update();
 
 		/*
 		 * Update & load
@@ -178,6 +201,7 @@ public class Fk extends JavaPlugin
 		previousVersion = saveableManager.getFileConfiguration("save.yml").getString("last_version");
 
 		saveableManager.loadAll();
+		game.updateDayDuration(displayService);
 
 		saveDefaultConfig();
 
@@ -205,6 +229,10 @@ public class Fk extends JavaPlugin
 				w.setTime(6000L);
 			}
 
+		if (fkPI.getRulesManager().getRule(Rule.HEALTH_BELOW_NAME)) {
+			fkPI.getTeamManager().nametag().createHealthObjective();
+		}
+
 		/*
 		 * Metrics
 		 */
@@ -218,8 +246,10 @@ public class Fk extends JavaPlugin
 		 * Updater
 		 */
 
-		PluginUpdater updater = new PluginUpdater(Fk.getInstance());
-		updater.runTaskAsynchronously(this);
+		UpdateChecker updater = new UpdateChecker(this);
+		if (updater.getCurrentVersion().isRelease()) {
+			updater.runTaskAsynchronously(this);
+		}
 
 		getServer().getScheduler().runTaskTimer(this, saveableManager::delayedSaveAll, 5L * 60L * 20L, 5L * 60L * 20L);
 	}
@@ -227,19 +257,21 @@ public class Fk extends JavaPlugin
 	@Override
 	public void onDisable()
 	{
-		saveableManager.delayedSaveAll();
+		for (Player player : this.getServer().getOnlinePlayers()) {
+			final FkPlayer fkPlayer = this.playerManager.getPlayerIfExist(player);
+			if (fkPlayer != null) {
+				this.displayService.hide(player, fkPlayer);
+			}
+		}
+		this.fkPI.teardown();
+
+		this.saveableManager.delayedSaveAll();
 		FkConfig.awaitSaveEnd();
 
-		if(game.getState().equals(Game.GameState.PAUSE))
-		{
+		if (this.game.isPaused()) {
 			getDeepPauseManager().unprotectItems();
 			getDeepPauseManager().resetAIs();
 		}
-
-		scoreboardManager.removeAllScoreboards();
-
-		for(FkPlayer p : getPlayerManager().getConnectedPlayers())
-			p.getScoreboard().remove();
 	}
 
 	public static void broadcast(String message, String prefix, FkSound sound)
@@ -293,7 +325,7 @@ public class Fk extends JavaPlugin
 		for(FkPlayer p : getPlayerManager().getConnectedPlayers())
 			p.getScoreboard().remove();
 
-		playerManager = new PlayerManager();
+		playerManager = new PlayerManager(displayService);
 		portalsManager = new PortalsManager();
 		deepPauseManager.unprotectItems();
 		deepPauseManager.resetAIs();
@@ -304,10 +336,8 @@ public class Fk extends JavaPlugin
 
 		pauseRestorer = new PauseRestorer();
 
-		// Scoreboards
-		scoreboardManager = new ScoreboardManager(); //Le recréer pour le réinitialiser
-
-		getScoreboardManager().recreateAllScoreboards();
+		displayService.loadNullable(null);
+		displayService.updateAll();
 
 		saveableManager = new SaveablesManager(this); // En dernier
 	}
@@ -334,15 +364,14 @@ public class Fk extends JavaPlugin
 			if(team.getBase() != null)
 				team.getBase().resetChestRoom();
 		}
-		getScoreboardManager().recreateAllScoreboards();
+		displayService.hideAll();
+		displayService.updateAll();
 	}
 
 	private boolean check()
 	{
-		List<String> warns = new ArrayList<>();
-
 		if(getConfig().get("Charged_creepers") != null)
-			warns.add(Messages.CONSOLE_CHARGED_CREEPERS_NOT_USE.getMessage());
+			addError(Messages.CONSOLE_CHARGED_CREEPERS_NOT_USE.getMessage());
 
 		if(!Version.hasSpigotApi())
 			addError("Le serveur n'est pas supporté par le plugin. Seuls les serveurs basés sur Spigot sont supportés.\nThe server is not supported by the plugin. Only Spigot based servers are supported.\nDer Server wird vom Plugin nicht unterstützt. Es werden nur Spigot-basierte Server unterstützt.");
@@ -350,15 +379,15 @@ public class Fk extends JavaPlugin
 		if(Version.isTooOldApi())
 			addError("§rLa version du serveur n'est pas compatible avec le plugin,\nmerci d'utiliser au minimum la version §l§n1.8.3 de Spigot.\n\n§rThe server version isn't compatible with the plugin,\nplease use at least the §l§n1.8.3 version of Spigot.\n\nDie Version des Servers ist nicht mit dem Plugin kompatibel. Bitte benutzen Sie mindestens die §l§nSpigot-Version 1.8.3.");
 
-		for(String warn : warns)
+		if (!pluginError.isEmpty())
 		{
-			getLogger().warning("------------------------------------------");
-			getLogger().warning(warn);
-			getLogger().warning("------------------------------------------");
+			getLogger().severe("------------------------------------------");
+			getLogger().warning(pluginError);
+			getLogger().severe("------------------------------------------");
 
-			onConnectWarnings.add(warn);
+			onConnectWarnings.add(pluginError);
 		}
-		return warns.isEmpty();
+		return pluginError.isEmpty();
 	}
 
 	public PacketManager initPacketManager() {
@@ -390,5 +419,21 @@ public class Fk extends JavaPlugin
 	public void addOnConnectWarning(String warning)
 	{
 		onConnectWarnings.add(warning);
+	}
+
+	public boolean updatePlugin(@NotNull GitHubAssetInfo assetInfo) {
+		try (BufferedInputStream in = new BufferedInputStream(new URL(assetInfo.browserDownloadUrl()).openStream());
+			 FileOutputStream fileOutputStream = new FileOutputStream(this.getDataFolder().getParentFile().getName() + '/' + assetInfo.name())) {
+			byte[] dataBuffer = new byte[1024];
+			int bytesRead;
+			while ((bytesRead = in.read(dataBuffer, 0, 1024)) != -1) {
+				fileOutputStream.write(dataBuffer, 0, bytesRead);
+			}
+
+			return this.getFile().delete();
+		} catch (IOException ex) {
+			this.getLogger().log(Level.SEVERE, "Unable to download the update.", ex);
+			return false;
+		}
 	}
 }

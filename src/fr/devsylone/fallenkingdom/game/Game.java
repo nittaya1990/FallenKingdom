@@ -1,5 +1,8 @@
 package fr.devsylone.fallenkingdom.game;
 
+import fr.devsylone.fallenkingdom.display.GlobalDisplayService;
+import fr.devsylone.fallenkingdom.display.tick.CycleTickFormatter;
+import fr.devsylone.fallenkingdom.display.tick.TickFormatter;
 import fr.devsylone.fkpi.teams.Team;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -15,9 +18,11 @@ import fr.devsylone.fkpi.api.event.GameEvent;
 import fr.devsylone.fkpi.rules.Rule;
 import fr.devsylone.fkpi.util.Saveable;
 import lombok.Getter;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Locale;
 
+import static fr.devsylone.fallenkingdom.display.tick.CycleTickFormatter.TICKS_PER_DAY_NIGHT_CYCLE;
 import static fr.devsylone.fallenkingdom.utils.ConfigHelper.enumValueOf;
 
 public class Game implements Saveable
@@ -25,11 +30,9 @@ public class Game implements Saveable
 	@Getter protected GameState state = GameState.BEFORE_STARTING;
 	@Getter protected int day = 0;
 	@Getter protected int time = FkPI.getInstance().getRulesManager().getRule(Rule.DAY_DURATION) - 10;
+	@Getter protected TickFormatter timeFormat = new CycleTickFormatter();
 
 	protected GameRunnable task = null;
-	protected int dayDurationCache = 24000;
-	protected int scoreboardUpdate = 20;
-	protected float dayTickFactor = 1;
 
 	@Getter protected boolean assaultsEnabled = false;
 	@Getter protected boolean pvpEnabled = false;
@@ -82,7 +85,7 @@ public class Game implements Saveable
 		if(task != null)
 			throw new IllegalStateException("Main timer already running");
 
-		if(!state.equals(GameState.BEFORE_STARTING))
+		if (hasStarted())
 			Fk.getInstance().getTipsManager().cancelBroadcasts();
 
 		task = new GameRunnable(this);
@@ -109,6 +112,7 @@ public class Game implements Saveable
 		endEnabled = false;
 	}
 
+	@Override
 	public void load(ConfigurationSection config)
 	{
 		day = Math.max(0, config.getInt("Day"));
@@ -137,6 +141,7 @@ public class Game implements Saveable
 		}
 	}
 
+	@Override
 	public void save(ConfigurationSection config)
 	{
 		config.set("State", state.name());
@@ -146,7 +151,7 @@ public class Game implements Saveable
 
 	public void start()
 	{
-		if(!state.equals(GameState.BEFORE_STARTING))
+		if(hasStarted())
 			throw new FkLightException(Messages.CMD_ERROR_GAME_ALREADY_STARTED);
 
 		setState(GameState.STARTING);
@@ -185,7 +190,7 @@ public class Game implements Saveable
 				updateDayDuration();
 				for(World w : Bukkit.getWorlds()) {
 					if (Fk.getInstance().getWorldManager().isAffected(w))
-						w.setTime(getExceptedWorldTime());
+						w.setFullTime(getExceptedWorldTime());
 				}
 
 				Fk.broadcast(Messages.BROADCAST_START.getMessage());
@@ -220,51 +225,60 @@ public class Game implements Saveable
 	public long getExceptedWorldTime()
 	{
 		if (FkPI.getInstance().getRulesManager().getRule(Rule.ETERNAL_DAY))
-			return 6000;
+			return 6000L;
 		else
-			return dayDurationCache == 24000 ? time : (long) (time / dayTickFactor);
+			return timeFormat.worldTime(day, time);
 	}
 
 	public void updateDayDuration()
 	{
-		float previousDayTickFactor = dayTickFactor;
-		dayDurationCache = FkPI.getInstance().getRulesManager().getRule(Rule.DAY_DURATION);
-		if(dayDurationCache < 1200)
-		{
-			FkPI.getInstance().getRulesManager().setRule(Rule.DAY_DURATION, 24000);
-			dayDurationCache = 24000;
+		int dayDuration = FkPI.getInstance().getRulesManager().getRule(Rule.DAY_DURATION);
+		if (dayDuration < 1200) {
+			FkPI.getInstance().getRulesManager().setRule(Rule.DAY_DURATION, TICKS_PER_DAY_NIGHT_CYCLE);
+			dayDuration = TICKS_PER_DAY_NIGHT_CYCLE;
 		}
-		dayTickFactor = dayDurationCache / 24000f;
-		scoreboardUpdate = dayDurationCache / 1200;
-		time = (int) (time / previousDayTickFactor * dayTickFactor);
+		long previousTime = timeFormat.worldTime(day, time);
+		timeFormat = timeFormat.withDayDuration(dayDuration);
+		time = timeFormat.timeFromWorld(previousTime);
+		day = timeFormat.dayFromWorld(previousTime);
+	}
+
+	public void updateDayDuration(@NotNull GlobalDisplayService displayService)
+	{
+		timeFormat = displayService.configureTickFormatter(timeFormat.dayDuration());
 	}
 
 	public String getFormattedTime()
 	{
-		return getHour()  + "h" + getMinute();
+		return getHour() + 'h' + getMinute();
 	}
 
 	public String getHour()
 	{
 		if(day == 0)
 			return "--";
-		int gameTime = (int) (time / dayTickFactor);
-		int hours = gameTime / 1000 + 6;
-		hours %= 24;
-		return String.format("%02d", hours);
+		return timeFormat.formatHours(time);
 	}
 
 	public String getMinute()
 	{
 		if(day == 0)
 			return "--";
-		int gameTime = (int) (time / dayTickFactor);
-		int minutes = (gameTime % 1000) * 60 / 1000;
-		return String.format("%02d", minutes);
+		return timeFormat.formatMinutes(time);
 	}
 
-	public int getTime()
+	public boolean isPreStart()
 	{
-		return time;
+		return state == GameState.BEFORE_STARTING;
+	}
+
+	public boolean hasStarted()
+	{
+		return state != GameState.BEFORE_STARTING;
+	}
+
+	public boolean isPaused()
+	{
+		return state == GameState.PAUSE;
 	}
 }

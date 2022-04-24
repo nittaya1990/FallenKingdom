@@ -8,10 +8,9 @@ import java.util.List;
 import fr.devsylone.fallenkingdom.Fk;
 import fr.devsylone.fallenkingdom.players.FkPlayer;
 import fr.devsylone.fallenkingdom.players.FkPlayer.PlayerState;
-import fr.devsylone.fallenkingdom.game.Game.GameState;
 import fr.devsylone.fallenkingdom.utils.Messages;
 import fr.devsylone.fallenkingdom.utils.NMSUtils;
-import fr.devsylone.fkpi.teams.Team;
+import fr.devsylone.fkpi.FkPI;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
@@ -47,16 +46,14 @@ public class JoinListener implements Listener
 			return;
 
 		FkPlayer player = Fk.getInstance().getPlayerManager().getPlayer(e.getPlayer());
-		
+
 		if(e.getPlayer().isOp())
 			for(String s : Fk.getInstance().getOnConnectWarnings())
 				e.getPlayer().sendMessage(s);
 
-		player.recreateScoreboard();
-
-		final Team pTeam = Fk.getInstance().getFkPI().getTeamManager().getPlayerTeam(e.getPlayer());
-		if(pTeam != null) //REFRESH LES TEAMS SCOREBOARD (MC=CACA)
-			Fk.getInstance().getScoreboardManager().refreshNicks();
+		player.refreshScoreboard();
+		if(NON_TESTING_ENV)
+			FkPI.getInstance().getTeamManager().nametag().addEntry(e.getPlayer());
 
 		e.setJoinMessage(null);
 		Fk.broadcast(Messages.CHAT_JOIN.getMessage().replace("%player%", e.getPlayer().getDisplayName()));
@@ -67,7 +64,7 @@ public class JoinListener implements Listener
 		if(NON_TESTING_ENV)
 		{
 			LocalDate currentDate = LocalDate.now();
-			if(Fk.getInstance().getGame().getState().equals(GameState.BEFORE_STARTING) && e.getPlayer().getInventory().getHelmet() == null && (currentDate.getDayOfMonth() == 12) && (currentDate.getMonth() == Month.JUNE))
+			if(Fk.getInstance().getGame().isPreStart() && e.getPlayer().getInventory().getHelmet() == null && (currentDate.getDayOfMonth() == 12) && (currentDate.getMonth() == Month.JUNE))
 				e.getPlayer().getInventory().setHelmet(head(currentDate));
 		}
 	}
@@ -75,8 +72,12 @@ public class JoinListener implements Listener
 	@EventHandler
 	public void quit(PlayerQuitEvent e)
 	{
-		if(Fk.getInstance().getPlayerManager().getPlayer(e.getPlayer()).getState() == PlayerState.EDITING_SCOREBOARD)
-			Fk.getInstance().getPlayerManager().getPlayer(e.getPlayer()).getSbDisplayer().exit();
+		final FkPlayer fkPlayer = Fk.getInstance().getPlayerManager().getPlayerIfExist(e.getPlayer());
+		if (fkPlayer != null) {
+			Fk.getInstance().getDisplayService().hide(e.getPlayer(), fkPlayer);
+			if(fkPlayer.getState() == PlayerState.EDITING_SCOREBOARD)
+				fkPlayer.getSbDisplayer().exit();
+		}
 
 		if (!Fk.getInstance().getWorldManager().isAffected(e.getPlayer().getWorld()))
 			return;

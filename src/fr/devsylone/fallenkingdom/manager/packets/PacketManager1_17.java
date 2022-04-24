@@ -7,7 +7,6 @@ import fr.devsylone.fallenkingdom.utils.Unsafety;
 import fr.devsylone.fallenkingdom.utils.XItemStack;
 import fr.devsylone.fallenkingdom.version.component.FkBook;
 import fr.devsylone.fallenkingdom.version.tracker.DataTracker;
-import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -21,14 +20,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static fr.devsylone.fallenkingdom.manager.packets.PacketManager1_9.getEnumItemSlot;
-import static fr.devsylone.fallenkingdom.utils.PacketUtils.MINECRAFT_CHUNK;
 
 public class PacketManager1_17 extends PacketManager {
 
     private static final Object ARMOR_STAND;
     private static final Object ZERO_VEC3D;
 
-    private static final Constructor<?> PACKET_CHUNK;
     private static final Constructor<?> PACKET_SPAWN_ENTITY;
     private static final Constructor<?> PACKET_DESTROY_ENTITY;
     private static final Constructor<?> PACKET_ENTITY_EQUIPMENT;
@@ -45,7 +42,6 @@ public class PacketManager1_17 extends PacketManager {
             ZERO_VEC3D = NMSUtils.getField(vec3dClass, vec3dClass, field -> Modifier.isStatic(field.getModifiers())).get(null);
 
             final String packetsPackage = "network.protocol.game";
-            final Class<?> packetChunkClass = NMSUtils.nmsClass(packetsPackage, "PacketPlayOutMapChunk");
             final Class<?> packetSpawnEntityClass = NMSUtils.nmsClass(packetsPackage, "PacketPlayOutSpawnEntity");
             final Class<?> packetDestroyEntityClass = NMSUtils.nmsClass(packetsPackage, "PacketPlayOutEntityDestroy");
             final Class<?> packetEntityEquipment = NMSUtils.nmsClass(packetsPackage, "PacketPlayOutEntityEquipment");
@@ -58,7 +54,6 @@ public class PacketManager1_17 extends PacketManager {
             }
             PACKET_DESTROY_ENTITY_LIST = entityDestroy.getParameterTypes()[0].equals(int[].class);
 
-            PACKET_CHUNK = packetChunkClass.getConstructor(MINECRAFT_CHUNK);
             PACKET_SPAWN_ENTITY = packetSpawnEntityClass.getConstructor(int.class, UUID.class, double.class, double.class, double.class, float.class, float.class, entityTypesClass, int.class, vec3dClass);
             PACKET_DESTROY_ENTITY = entityDestroy;
             PACKET_ENTITY_EQUIPMENT = packetEntityEquipment.getConstructor(int.class, List.class);
@@ -99,7 +94,7 @@ public class PacketManager1_17 extends PacketManager {
             PacketUtils.setField("b", new DataTracker()
                             .invisible()
                             .customName(customName)
-                            .customNameVisible(true)
+                            .customNameVisible(visible)
                             .trackedValues(),
                     packet);
             PacketUtils.sendPacket(getPlayer(id), packet);
@@ -146,15 +141,6 @@ public class PacketManager1_17 extends PacketManager {
     @Override
     public void sendBlockChange(Player player, Location loc, Material newBlock) {
         player.sendBlockChange(loc, newBlock.createBlockData());
-    }
-
-    @Override
-    public void sendChunkReset(Player player, Chunk chunk) {
-        try {
-            PacketUtils.sendPacket(player, PACKET_CHUNK.newInstance(PacketUtils.getNMSChunk(chunk)));
-        } catch (ReflectiveOperationException e) {
-            e.printStackTrace();
-        }
     }
 
     @Override

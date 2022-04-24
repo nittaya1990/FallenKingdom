@@ -19,14 +19,12 @@ import fr.devsylone.fallenkingdom.commands.rules.rulescommands.booleancommands.D
 import fr.devsylone.fallenkingdom.commands.rules.rulescommands.booleancommands.TntJump;
 import fr.devsylone.fallenkingdom.commands.scoreboard.scoreboardcommands.Edit;
 import fr.devsylone.fallenkingdom.utils.Messages;
-import org.apache.commons.lang.StringUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import fr.devsylone.fallenkingdom.Fk;
 import fr.devsylone.fallenkingdom.commands.chests.chestscommands.Add;
 import fr.devsylone.fallenkingdom.commands.chests.chestscommands.ChestLock;
-import fr.devsylone.fallenkingdom.game.Game.GameState;
 import fr.devsylone.fallenkingdom.players.Tip;
 import fr.devsylone.fallenkingdom.utils.ChatUtils;
 import fr.devsylone.fallenkingdom.utils.FkSound;
@@ -77,7 +75,7 @@ public class TipsManager
 
 		displayed.add(tip);
 
-		if(StringUtils.isNotBlank(tip.getTip()))
+		if(!tip.getTip().isEmpty())
 		{
 			Fk.broadcast(" ");
 			Fk.broadcast(tip.getChatFormatted(), ChatUtils.TIP, FkSound.NOTE_PLING);
@@ -91,7 +89,7 @@ public class TipsManager
 	{
 		this.task = new BukkitRunnable() {
 			public void run() {
-				if(Fk.getInstance().getGame().getState().equals(GameState.BEFORE_STARTING))
+				if(Fk.getInstance().getGame().isPreStart())
 					sendRandomTip();
 			}
 		}.runTaskTimerAsynchronously(Fk.getInstance(), 3 * 60 * 20, 3 * 60 * 20).getTaskId();

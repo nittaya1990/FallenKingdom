@@ -45,7 +45,7 @@ public class PacketUtils
 			GET_PLAYER_CONNECTION_CRAFT_PLAYER = lookup.unreflectGetter(playerConnectionField);
 
 			final Class<?> packet = NMSUtils.nmsClass("network.protocol", "Packet");
-			SEND_PACKET = lookup.unreflect(playerConnection.getMethod("sendPacket", packet));
+			SEND_PACKET = lookup.unreflect(NMSUtils.getMethod(playerConnection, void.class, packet));
 
 			CRAFT_WORLD = NMSUtils.obcClass("CraftWorld");
 			final Method getWorldHandle = CRAFT_WORLD.getMethod("getHandle");
@@ -55,11 +55,8 @@ public class PacketUtils
 			Method getChunkAt;
 			try {
 				getChunkAt = MINECRAFT_WORLD.getMethod("getChunkAt", int.class, int.class);
-				if (!getChunkAt.getReturnType().isAssignableFrom(MINECRAFT_CHUNK)) {
-					throw new NoSuchMethodException("Wrong getChunkAt method.");
-				}
-			} catch (NoSuchMethodException remapException) {
-				getChunkAt = MINECRAFT_WORLD.getMethod("getChunk", int.class, int.class);
+			} catch (NoSuchMethodException v1_18) {
+				getChunkAt = NMSUtils.getMethod(MINECRAFT_WORLD, MINECRAFT_CHUNK, int.class, int.class);
 			}
 			GET_CHUNK_HANDLE_AT = lookup.unreflect(getChunkAt);
 		}catch(ReflectiveOperationException e)

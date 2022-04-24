@@ -2,6 +2,7 @@ package fr.devsylone.fallenkingdom.listeners.entity.player;
 
 import fr.devsylone.fallenkingdom.Fk;
 import fr.devsylone.fallenkingdom.players.FkPlayer;
+import fr.devsylone.fkpi.FkPI;
 import org.bukkit.World.Environment;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -18,14 +19,15 @@ public class GoToNetherListener implements Listener
 		if(Fk.getInstance().getWorldManager().isAffected(e.getPlayer().getWorld()))
 		{
 			FkPlayer player = Fk.getInstance().getPlayerManager().getPlayer(e.getPlayer());
-			player.recreateScoreboard();
+			player.refreshScoreboard();
+			FkPI.getInstance().getTeamManager().nametag().addEntry(e.getPlayer());
 		}
 		else
 		{
 			FkPlayer player = Fk.getInstance().getPlayerManager().getPlayerIfExist(e.getPlayer());
 			if(player != null)
 				player.removeScoreboard();
-			Fk.getInstance().getScoreboardManager().refreshNicks();
+			FkPI.getInstance().getTeamManager().nametag().removeEntry(e.getPlayer());
 		}
 	}
 }

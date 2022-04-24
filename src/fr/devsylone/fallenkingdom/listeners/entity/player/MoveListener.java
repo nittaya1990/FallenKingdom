@@ -41,7 +41,7 @@ public class MoveListener implements Listener
 		 */
 
 		FkPlayer fkp = Fk.getInstance().getPlayerManager().getPlayer(e.getPlayer());
-		fkp.getScoreboard().refresh(PlaceHolder.BASE_DIRECTION, PlaceHolder.BASE_DISTANCE, PlaceHolder.NEAREST_TEAM_BASE, PlaceHolder.NEAREST_BASE_DIRECTION);
+		fkp.updateDisplay(e.getPlayer(), PlaceHolder.LOCATION_RELATIVE);
 
 		if(e.getFrom().getBlockX() == e.getTo().getBlockX() && e.getFrom().getBlockZ() == e.getTo().getBlockZ() && e.getFrom().getBlockY() == e.getTo().getBlockY())
 			return;
@@ -52,7 +52,7 @@ public class MoveListener implements Listener
 
 		checkTnt(e);
 
-		if(Fk.getInstance().getGame().getState().equals(GameState.PAUSE) && FkPI.getInstance().getRulesManager().getRule(Rule.DEEP_PAUSE) && e.getFrom().getBlockY() == e.getTo().getBlockY())
+		if(Fk.getInstance().getGame().isPaused() && FkPI.getInstance().getRulesManager().getRule(Rule.DEEP_PAUSE) && e.getFrom().getBlockY() == e.getTo().getBlockY())
 		{
 			if(e.getPlayer().getGameMode().equals(GameMode.CREATIVE) || e.getPlayer().getGameMode().equals(GameMode.SPECTATOR))
 				return;
@@ -85,7 +85,7 @@ public class MoveListener implements Listener
 					else
 						fkp.sendMessage(Messages.PLAYER_BASE_EXIT.getMessage().replace("%team%", team.toString()));
 
-				if(team.getBase().getChestsRoom() != null && FkPI.getInstance().getChestsRoomsManager().isEnabled() && !e.getPlayer().getGameMode().equals(GameMode.SPECTATOR))
+				if(team.getBase().getChestsRoom() != null && FkPI.getInstance().getChestsRoomsManager().isEnabled() && e.getPlayer().getGameMode() != GameMode.SPECTATOR)
 				{
 					if(team.getBase().getChestsRoom().contains(e.getTo()) && !team.getBase().getChestsRoom().contains(e.getFrom()))
 						if(team.equals(pTeam))
@@ -93,7 +93,8 @@ public class MoveListener implements Listener
 						else
 						{
 							fkp.sendMessage(Messages.PLAYER_CHEST_ROOM_ENTER.getMessage().replace("%team%", team.toString()));
-							team.getBase().getChestsRoom().addEnemyInside(e.getPlayer());
+							if(Fk.getInstance().getGame().isAssaultsEnabled())
+								team.getBase().getChestsRoom().addEnemyInside(e.getPlayer());
 						}
 
 					else if(team.getBase().getChestsRoom().contains(e.getFrom()) && !team.getBase().getChestsRoom().contains(e.getTo()))
